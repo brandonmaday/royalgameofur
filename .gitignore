@@ -1,4 +1,4 @@
 client/elm-stuff
 database.db
 __pycache__
-elm.bin.js
+*.bin.js
