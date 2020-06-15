@@ -63,6 +63,12 @@ def logout():
     logout_user()
     return "OK"
 
+@app.route("/authenticated")
+def is_authenticated():
+    if current_user.is_authenticated:
+        return jsonify(True)
+    return jsonify(False)
+
 def make_msg(*args):
     return {"msg": args}
 
@@ -84,17 +90,18 @@ def player(p):
         p.sid
     )
 
-def got_players(room):
+def got_players():
     emit(
         "update",
         make_msg(
-            GOTPLAYERS, [
+            GOTPLAYERS, 
+            [
                 x.label
                 for x in [player(y) for y in Player.query.all()]
-                if x.room == room and x.active
+                if x.room == "LOBBY" and x.active
             ]
         ),
-        room=room
+        room="LOBBY"
     )
 
 def got_games():
@@ -130,17 +137,17 @@ MAKEBOARD = "MAKEBOARD"
 JOINBOARD = "JOINBOARD"
 QUITGAME = "QUITGAME"
 GOTGAMES = "GOTGAMES"
+KICK = "KICK"
+REFRESH = "REFRESH"
 
 @socketio.on("connect")
 def conn():
-    print(request.sid)
     if current_user.sid is None:
         current_user.sid = request.sid
         db.session.commit()
         p = player(current_user)
         join_room(p.room)
-        emit("update", make_msg(JOINED, p.room))
-        got_players(p.room)
+        got_players()
         got_games()
     else:
         emit("update", make_msg(MULTIJOIN))
@@ -148,55 +155,66 @@ def conn():
 @socketio.on("disconnect")
 def disconn():
     if current_user.sid == request.sid:
+        p = player(current_user)
+        if p.maybeBoard:
+            quit_game(True)
         current_user.sid = None
         db.session.commit()
-        got_players(player(current_user).room)
+        got_players()
+        got_games()
 
 def joinBoard(room):
-    print("room")
-    print(room)
-    got_games()
     leave_room("LOBBY")
     join_room(room)
-    emit("update", make_msg(JOINED, room))
-    got_players(room)
-    got_players("LOBBY")
+    emit("update", make_msg(JOINED, current_user.label), room=room)
+    got_players()
+    got_games()
+
+def quit_game(disconnect):
+    p = player(current_user)
+    p.maybeBoard.active = False
+    db.session.commit()
+    for boot in p.maybeBoard.players:
+        if disconnect and p.sid == boot.sid:
+            continue
+        if p.sid != boot.sid:
+            emit("update", make_msg(KICK), room=boot.sid)
+        leave_room(p.room, sid=boot.sid)
+        join_room("LOBBY", sid=boot.sid)
+
 
 @socketio.on("update")
 def update(msg):
-    if msg[0] == LOGOUT:
-        p = player(current_user)
-        current_user.sid = None
-        db.session.commit()
-        got_players(p.room)
-        emit("update", make_msg(LOGOUT))
-    if msg[0] == MAKEBOARD:
-        b = Board(active=True)
-        current_user.boards.append(b)
-        db.session.commit()
-        b.label = f"board{b.id}"
-        db.session.commit()
-        print("blabelmake")
-        print(b.label)
-        joinBoard(b.label)
-    if msg[0] == QUITGAME:
-        p = player(current_user)
-        p.maybeBoard.active = False
-        db.session.commit()
-        for boot in p.maybeBoard.players:
-            leave_room(p.room, sid=boot.sid)
-            join_room("LOBBY", sid=boot.sid)
-            emit("update", make_msg(JOINED, "LOBBY"), room=boot.sid)
-        got_players("LOBBY")
-        got_games()
-    if msg[0] == JOINBOARD:
-        b = Board.query.filter(Board.label==msg[1]).first()
-        b.players.append(current_user)
-        db.session.commit()
-        print("blabeljoin")
-        print(b.label)
-        joinBoard(b.label)
-
+    if isinstance(msg, list):
+        if msg[0] == LOGOUT:
+            p = player(current_user)
+            current_user.sid = None
+            db.session.commit()
+            got_players()
+            emit("update", make_msg(LOGOUT))
+        if msg[0] == MAKEBOARD:
+            b = Board(active=True)
+            current_user.boards.append(b)
+            db.session.commit()
+            b.label = f"board{b.id}"
+            db.session.commit()
+            joinBoard(b.label)
+        if msg[0] == JOINBOARD:
+            b = Board.query.filter(Board.label==msg[1]).first()
+            b.players.append(current_user)
+            db.session.commit()
+            joinBoard(b.label)
+        if msg[0] == QUITGAME:
+            quit_game(False)
+            got_players()
+            got_games()
+        if msg[0] == REFRESH:
+            got_players()
+            got_games()
+    else:
+        if msg["msg"] in ["Rolled", "Move"]:
+            p = player(current_user)
+            emit("update", msg, room=p.room)
 
 if __name__ == "__main__":
     socketio.run(app)
