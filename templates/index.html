@@ -24,7 +24,7 @@
                 let self = this;
                 elmApp.ports.pong.subscribe(update => {
                     if (update.msg == "MakeSocket") {
-                        self.sio = io.connect("http://localhost:5000");
+                        self.sio = io.connect("/");
                         // UPDATE
                         self.sio.on("update", function(update) {
                             if (update.msg[0] == "MULTIJOIN") {
@@ -49,7 +49,7 @@
                             } else if (["Rolled", "Move"].includes(update.msg)) {
                                 elmApp.ports.ping.send(update);
                             } else if (update.msg[0] == "LOGOUT") {
-                                window.location = "http://localhost:5000/logout";
+                                window.location = "/logout";
                             }
                         });
                     } else if (update.msg == "LogMeOut") {

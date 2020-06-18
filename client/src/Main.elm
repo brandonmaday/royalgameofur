@@ -1029,7 +1029,7 @@ decodePing =
 isLoggedIn : Cmd Msg
 isLoggedIn =
   Http.get
-    { url = "http://localhost:5000/authenticated"
+    { url = "/authenticated"
     , expect = Http.expectJson LoggedIn JD.bool
     }
 
@@ -1037,7 +1037,7 @@ isLoggedIn =
 loginPlayer : String -> Cmd Msg
 loginPlayer name =
   Http.post
-    { url = "http://localhost:5000/login"
+    { url = "/login"
     , body = Http.jsonBody (JE.string name)
     , expect = Http.expectJson LoginPong loginDecoder
     }
